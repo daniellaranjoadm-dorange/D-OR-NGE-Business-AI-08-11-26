@@ -1,0 +1,515 @@
+import React, { useState } from 'react';
+import { useApp } from '../context/AppContext';
+import { 
+  DollarSign, 
+  TrendingUp, 
+  TrendingDown, 
+  FileText, 
+  Download, 
+  Plus, 
+  QrCode, 
+  CheckCircle2, 
+  Clock, 
+  Users, 
+  CreditCard,
+  Printer,
+  Receipt
+} from 'lucide-react';
+import { formatCurrencyBRL, formatDateBR } from '../utils/validators';
+import {localDateKey} from '../utils/businessInsights';
+
+export const FinancialView: React.FC = () => {
+  const { currentTenant, financialTransactions, appointments, professionals, createFinancialTransaction } = useApp();
+
+  const [filterType, setFilterType] = useState<'all' | 'income' | 'expense' | 'commission'>('all');
+  const [period,setPeriod]=useState<'month'|'all'>('month');
+  const currentMonth=localDateKey(new Date()).slice(0,7);
+  const ledger=financialTransactions.filter(t=>t.tenantId===currentTenant?.id&&(period==='all'||t.date.slice(0,7)===currentMonth));
+  const [isNewTxModalOpen, setIsNewTxModalOpen] = useState<boolean>(false);
+  const [isPixModalOpen, setIsPixModalOpen] = useState<boolean>(false);
+  const [selectedReceiptTx, setSelectedReceiptTx] = useState<any>(null);
+
+  // Form de nova despesa/receita manual
+  const [txType, setTxType] = useState<'income' | 'expense'>('expense');
+  const [txCategory, setTxCategory] = useState<string>('Insumos');
+  const [txDescription, setTxDescription] = useState<string>('');
+  const [txAmount, setTxAmount] = useState<string>('');
+  const [txPaymentMethod, setTxPaymentMethod] = useState<'pix' | 'credit_card' | 'debit_card' | 'cash'>('pix');
+
+  const filteredTx = ledger.filter((f) => {
+    if (filterType !== 'all' && f.type !== filterType) return false;
+    return true;
+  });
+
+  const totalIncomes = ledger
+    .filter((f) => f.type === 'income' && f.status === 'paid')
+    .reduce((a, b) => a + b.amount, 0);
+
+  const totalExpenses = ledger
+    .filter((f) => f.type === 'expense' && f.status==='paid')
+    .reduce((a, b) => a + b.amount, 0);
+
+  const totalCommissions = ledger
+    .filter((f) => f.type === 'commission' && f.status==='paid')
+    .reduce((a, b) => a + b.amount, 0);
+
+  const netBalance = totalIncomes - totalExpenses - totalCommissions;
+
+  const handleCreateTx = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!txDescription || !txAmount) return;
+
+    await createFinancialTransaction({
+      type: txType,
+      category: txCategory,
+      description: txDescription,
+      amount: parseFloat(txAmount),
+      paymentMethod: txPaymentMethod,
+    });
+
+    setIsNewTxModalOpen(false);
+    setTxDescription('');
+    setTxAmount('');
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['Data', 'Tipo', 'Categoria', 'Descrição', 'Valor (R$)', 'Status'];
+    const rows = filteredTx.map((t) => [
+      t.date,
+      t.type === 'income' ? 'Receita' : t.type === 'expense' ? 'Despesa' : 'Comissão',
+      t.category,
+      `"${t.description.replace(/^[=+@\-\t\r]/,"'$&").replace(/"/g, '""')}"`,
+      t.amount.toFixed(2),
+      t.status === 'paid' ? 'Pago' : 'Pendente',
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(';'), ...rows.map((e) => e.join(';'))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `relatorio_financeiro_${currentTenant?.slug}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  return (
+    <div className="space-y-6 pb-20 xl:pb-8">
+      {/* Header com Ações de Exportação */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="font-display font-bold text-stone-900 text-xl sm:text-2xl">
+            Gestão Financeira & Caixa
+          </h1>
+          <p className="text-xs text-stone-700">
+            Controle de receitas, insumos, comissões de equipe e pagamentos ({currentTenant?.tradeName})
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className="text-xs font-semibold">Período<select aria-label="Período financeiro" value={period} onChange={e=>setPeriod(e.target.value as 'month'|'all')} className="ml-2 p-2 rounded-xl border border-stone-300 bg-white"><option value="month">Mês atual</option><option value="all">Todo o histórico</option></select></label>
+          <button
+            onClick={() => setIsPixModalOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-all shadow-xs"
+          >
+            <QrCode className="w-4 h-4 text-emerald-700" />
+            Cobrar Sinal / Pix
+          </button>
+
+          <button
+            onClick={handleExportCSV}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-stone-700 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl transition-all shadow-xs"
+          >
+            <Download className="w-4 h-4" />
+            Exportar visão em CSV
+          </button>
+
+          <button
+            onClick={handlePrint}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-stone-700 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl transition-all shadow-xs"
+          >
+            <Printer className="w-4 h-4" />
+            Imprimir / PDF
+          </button>
+
+          <button
+            onClick={() => setIsNewTxModalOpen(true)}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition-all shadow-xs"
+          >
+            <Plus className="w-4 h-4" />
+            Lançar Despesa
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Cards Financeiros (Tabular Numerals) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-stone-200 shadow-xs">
+          <div className="flex items-center justify-between text-stone-700 mb-2">
+            <span className="text-xs font-semibold">Receitas Realizadas</span>
+            <TrendingUp className="w-4 h-4 text-emerald-600" />
+          </div>
+          <div className="font-display font-bold text-2xl text-emerald-700 tabular-nums">
+            {formatCurrencyBRL(totalIncomes)}
+          </div>
+          <p className="text-[11px] text-stone-700 mt-1">Entradas registradas como pagas no período</p>
+        </div>
+
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-stone-200 shadow-xs">
+          <div className="flex items-center justify-between text-stone-700 mb-2">
+            <span className="text-xs font-semibold">Despesas & Insumos</span>
+            <TrendingDown className="w-4 h-4 text-rose-600" />
+          </div>
+          <div className="font-display font-bold text-2xl text-rose-600 tabular-nums">
+            {formatCurrencyBRL(totalExpenses)}
+          </div>
+          <p className="text-[11px] text-stone-700 mt-1">Despesas registradas como pagas no período</p>
+        </div>
+
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-stone-200 shadow-xs">
+          <div className="flex items-center justify-between text-stone-700 mb-2">
+            <span className="text-xs font-semibold">Comissões da Equipe</span>
+            <Users className="w-4 h-4 text-amber-600" />
+          </div>
+          <div className="font-display font-bold text-2xl text-amber-900 tabular-nums">
+            {formatCurrencyBRL(totalCommissions)}
+          </div>
+          <p className="text-[11px] text-stone-700 mt-1">Comissões registradas como pagas no período</p>
+        </div>
+
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-stone-200 shadow-xs">
+          <div className="flex items-center justify-between text-stone-700 mb-2">
+            <span className="text-xs font-semibold">Saldo de caixa no período</span>
+            <DollarSign className="w-4 h-4 text-stone-900" />
+          </div>
+          <div className="font-display font-bold text-2xl text-stone-900 tabular-nums">
+            {formatCurrencyBRL(netBalance)}
+          </div>
+          <p className="text-[11px] text-stone-600 mt-1">Recebimentos menos despesas e comissões pagas</p>
+        </div>
+      </div>
+
+      {/* Tabela de Transações */}
+      <div className="bg-white rounded-2xl border border-stone-200 shadow-xs overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-stone-50/50">
+          <div>
+            <h3 className="font-display font-bold text-stone-900 text-sm">
+              Livro Caixa & Movimentações
+            </h3>
+            <p className="text-[11px] text-stone-600">
+              Registros manuais de balcão. Sem integração bancária automatizada.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1">
+            {[
+              { id: 'all', label: 'Todas' },
+              { id: 'income', label: 'Receitas' },
+              { id: 'expense', label: 'Despesas' },
+              { id: 'commission', label: 'Comissões' },
+            ].map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setFilterType(f.id as any)}
+                className={`px-3 py-1 text-xs font-medium rounded-lg transition-all ${
+                  filterType === f.id
+                    ? 'bg-stone-900 text-white font-semibold'
+                    : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-stone-200 bg-stone-50/70 text-stone-700 font-semibold">
+                <th className="py-3 px-4">Data</th>
+                <th className="py-3 px-4">Tipo</th>
+                <th className="py-3 px-4">Categoria</th>
+                <th className="py-3 px-4">Descrição</th>
+                <th className="py-3 px-4">Forma</th>
+                <th className="py-3 px-4 text-right">Valor</th>
+                <th className="py-3 px-4 text-center">Status</th>
+                <th className="py-3 px-4 text-center">Comprovante</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100">
+              {filteredTx.map((tx) => (
+                <tr key={tx.id} className="hover:bg-stone-50/70 transition-colors">
+                  <td className="py-3 px-4 font-mono text-stone-700 tabular-nums">
+                    {formatDateBR(tx.date)}
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className={`font-semibold ${
+                      tx.type === 'income' 
+                        ? 'text-emerald-700' 
+                        : tx.type === 'expense' 
+                        ? 'text-rose-600' 
+                        : 'text-amber-700'
+                    }`}>
+                      {tx.type === 'income' ? 'Receita' : tx.type === 'expense' ? 'Despesa' : 'Comissão'}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-stone-700 font-medium">
+                    {tx.category}
+                  </td>
+                  <td className="py-3 px-4 text-stone-900 font-medium">
+                    {tx.description}
+                  </td>
+                  <td className="py-3 px-4 uppercase text-stone-700 text-[10px]">
+                    {tx.paymentMethod || 'PIX'}
+                  </td>
+                  <td className="py-3 px-4 text-right font-bold tabular-nums text-stone-900">
+                    <span className={tx.type === 'expense' || tx.type === 'commission' ? 'text-rose-600' : 'text-emerald-700'}>
+                      {tx.type === 'expense' || tx.type === 'commission' ? '-' : '+'} {formatCurrencyBRL(tx.amount)}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      tx.status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {tx.status === 'paid' ? 'Quitado' : 'Previsto'}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    <button
+                      onClick={() => setSelectedReceiptTx(tx)}
+                      title="Gerar Comprovante / Recibo de Caixa"
+                      className="p-1.5 rounded-lg border border-stone-200 hover:border-stone-400 bg-white hover:bg-stone-50 text-stone-700 transition shadow-2xs inline-flex items-center gap-1"
+                    >
+                      <Receipt className="w-3.5 h-3.5" />
+                      <span className="text-[10px] font-semibold">Recibo</span>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal Lançar Despesa */}
+      {isNewTxModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl border border-stone-200 w-full max-w-md p-6 space-y-4">
+            <h3 className="font-display font-bold text-stone-900 text-base">
+              Lançar Movimentação Financeira
+            </h3>
+            <form onSubmit={handleCreateTx} className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTxType('expense')}
+                  className={`py-2 text-xs font-semibold rounded-xl border transition-all ${
+                    txType === 'expense' ? 'border-rose-600 bg-rose-50 text-rose-900' : 'border-stone-200 text-stone-600'
+                  }`}
+                >
+                  Despesa / Insumo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTxType('income')}
+                  className={`py-2 text-xs font-semibold rounded-xl border transition-all ${
+                    txType === 'income' ? 'border-emerald-600 bg-emerald-50 text-emerald-900' : 'border-stone-200 text-stone-600'
+                  }`}
+                >
+                  Receita Avulsa
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">Descrição *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Compra de luvas descartáveis e algodão"
+                  value={txDescription}
+                  onChange={(e) => setTxDescription(e.target.value)}
+                  className="w-full text-xs px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">Valor (R$) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="0.00"
+                    value={txAmount}
+                    onChange={(e) => setTxAmount(e.target.value)}
+                    className="w-full text-xs px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">Categoria</label>
+                  <input
+                    type="text"
+                    value={txCategory}
+                    onChange={(e) => setTxCategory(e.target.value)}
+                    className="w-full text-xs px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-200">
+                <button
+                  type="button"
+                  onClick={() => setIsNewTxModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-stone-600 hover:text-stone-900"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition-all shadow-xs"
+                >
+                  Salvar Lançamento
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Simulador Pix */}
+      {isPixModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl border border-stone-200 w-full max-w-sm p-6 space-y-4 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center mx-auto">
+              <QrCode className="w-6 h-6" />
+            </div>
+
+            <div>
+              <h3 className="font-display font-bold text-stone-900 text-base">
+                Cobrança de Sinal por Pix
+              </h3>
+              <p className="text-xs text-stone-700 mt-0.5">
+                Integração de pagamentos pendente de configuração.
+              </p>
+            </div>
+
+            {/* Simulação QR Code Pix */}
+            <div className="p-4 bg-stone-50 border border-stone-200 rounded-2xl inline-block mx-auto">
+              <div className="w-40 h-40 bg-stone-900 rounded-xl flex items-center justify-center text-white text-xs p-4 font-mono text-center">
+                DEMONSTRAÇÃO — SEM COBRANÇA
+              </div>
+            </div>
+
+            <p className="text-[11px] text-stone-700">
+              Valor sugerido de sinal: <strong>R$ 30,00</strong> para reserva garantida de horário e redução de no-shows.
+            </p>
+
+            <p className="text-xs text-stone-700">Nenhum código de pagamento é gerado. Para cobrar, utilize seu banco e confira valor e favorecido.</p>
+
+            <button
+              onClick={() => setIsPixModalOpen(false)}
+              className="text-xs text-stone-700 hover:text-stone-900 font-semibold block mx-auto"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Comprovante de Atendimento / Caixa */}
+      {selectedReceiptTx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm print:p-0 print:bg-white">
+          <div className="bg-white rounded-2xl shadow-2xl border border-stone-200 w-full max-w-md p-6 space-y-4 print:shadow-none print:border-none print:p-0">
+            {/* Cabeçalho do Recibo */}
+            <div className="text-center pb-3 border-b border-stone-200">
+              <span className="text-[10px] uppercase font-bold tracking-widest text-stone-700 block">
+                Comprovante de Operação
+              </span>
+              <h3 className="font-display font-bold text-stone-900 text-lg mt-0.5">
+                {currentTenant?.tradeName}
+              </h3>
+              <p className="text-xs text-stone-700">
+                {currentTenant?.city} · {currentTenant?.state}
+                {currentTenant?.phone ? ` · WhatsApp: ${currentTenant.phone}` : ''}
+              </p>
+            </div>
+
+            {/* Aviso Explicito Obrigatório: Registro Manual */}
+            <div className="p-2.5 bg-amber-50/90 border border-amber-200 rounded-xl text-center">
+              <span className="text-xs font-bold text-amber-900 block">
+                Registro Manual no Caixa
+              </span>
+              <span className="text-[10px] text-amber-800">
+                (Sem integração bancária automática · Conciliado localmente)
+              </span>
+            </div>
+
+            {/* Detalhes da Transação */}
+            <div className="space-y-2 text-xs divide-y divide-stone-100">
+              <div className="flex justify-between py-1.5">
+                <span className="text-stone-700">Código do Lançamento:</span>
+                <span className="font-mono text-stone-900 text-[11px]">{selectedReceiptTx.id}</span>
+              </div>
+              <div className="flex justify-between py-1.5">
+                <span className="text-stone-700">Data & Hora:</span>
+                <span className="font-medium text-stone-900">{formatDateBR(selectedReceiptTx.date)}</span>
+              </div>
+              <div className="flex justify-between py-1.5">
+                <span className="text-stone-700">Natureza:</span>
+                <span className="font-semibold text-stone-900">
+                  {selectedReceiptTx.type === 'income' ? 'Receita / Pagamento de Cliente' : selectedReceiptTx.type === 'expense' ? 'Despesa / Insumo' : 'Comissão'}
+                </span>
+              </div>
+              <div className="flex justify-between py-1.5">
+                <span className="text-stone-700">Descrição / Serviço:</span>
+                <span className="font-medium text-stone-900 text-right max-w-[60%]">{selectedReceiptTx.description}</span>
+              </div>
+              <div className="flex justify-between py-1.5">
+                <span className="text-stone-700">Forma de Pagamento:</span>
+                <span className="font-semibold uppercase text-stone-900">{selectedReceiptTx.paymentMethod || 'Dinheiro / Balcão'}</span>
+              </div>
+              <div className="flex justify-between py-2 items-center bg-stone-50 px-2 rounded-lg mt-2">
+                <span className="text-xs font-bold text-stone-900">Valor Total Registrado:</span>
+                <span className="font-display font-bold text-base text-stone-900 tabular-nums">
+                  {formatCurrencyBRL(selectedReceiptTx.amount)}
+                </span>
+              </div>
+            </div>
+
+            {/* Linha de Assinatura / Conferência */}
+            <div className="pt-6 text-center border-t border-dashed border-stone-200">
+              <div className="w-48 mx-auto border-t border-stone-400 mb-1"></div>
+              <span className="text-[10px] text-stone-700 uppercase tracking-wider block">
+                Assinatura / Conferência do Caixa
+              </span>
+            </div>
+
+            {/* Ações (ocultadas na impressão) */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-200 print:hidden">
+              <button
+                type="button"
+                onClick={() => setSelectedReceiptTx(null)}
+                className="px-4 py-2 text-xs font-semibold text-stone-600 hover:text-stone-900"
+              >
+                Fechar
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 rounded-xl transition-all shadow-xs"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Imprimir Recibo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
